@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Juego Damas</title>
+  <style>
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-gap: 0;
+      width: 500px;
+      height: 500px;
+      border: 2px solid #333;
+    }
+    .square {
+      width: 62.5px;
+      height: 62.5px;
+      background-color: #ccc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .square.dark {
+      background-color: #333;
+    }
+    .piece {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background-color: white;
+      border: 2px solid #000;
+      cursor: pointer;
+    }
+    .piece.black {
+      background-color: black;
+      border-color: #fff;
+    }
+    .piece.king::after {
+      content: "♔";
+      font-size: 30px;
+      color: gold;
+      position: relative;
+      top: -8px;
+    }
+    .possible-move {
+      background-color: rgba(0, 255, 0, 0.3);
+    }
+    .game-info {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="board" id="board"></div>
+  <div class="game-info">
+    <h2>Información de la Partida</h2>
+    <p>Turno: <span id="turn"></span></p>
+    <p>Fichas comidas: <span id="captured"></span></p>
+    <p>Damas: <span id="kings"></span></p>
+    <p>Sopladas: <span id="blows"></span></p>
+  </div>
+
+  <script>
+    const board = document.getElementById('board');
+    let turn = 'white';
+    let capturedPieces = { white: 0, black: 0 };
+    let kings = { white: 0, black: 0 };
+    let blowedPieces = { white: 0, black: 0 };
+    let selectedPiece = null;
+    let possibleMoves = [];
+
+    function createBoard() {
+      for (let i = 0; i < 8; i++) {
+        for (let j = 0; j < 8; j++) {
+          const square = document.createElement('div');
+          square.classList.add('square');
+          square.dataset.row = i;
+          square.dataset.col = j;
+          if ((i + j) % 2 !== 0) {
+            square.classList.add('dark');
+          }
+          square.addEventListener('click', handleSquareClick);
+          board.appendChild(square);
+        }
+      }
+    }
+
+    function placePieces() {
+      const squares = document.querySelectorAll('.square');
+      for (let i = 0; i < 3; i++) {
+        for (let j = (i % 2 === 0) ? 1 : 0; j < 8; j += 2) {
+          const piece = createPiece('black', i, j);
+          squares[i * 8 + j].appendChild(piece);
+        }
+      }
+      for (let i = 5; i < 8; i++) {
+        for (let j = (i % 2 === 0) ? 1 : 0; j < 8; j += 2) {
+          const piece = createPiece('white', i, j);
+          squares[i * 8 + j].appendChild(piece);
+        }
+      }
+    }
+
+    function createPiece(color, row, col) {
+      const piece = document.createElement('div');
+      piece.classList.add('piece', color);
+      piece.dataset.row = row;
+      piece.dataset.col = col;
+      piece.addEventListener('click', handlePieceClick);
+      return piece;
+    }
+
+    function handlePieceClick(event) {
+      event.stopPropagation();
+      const piece = event.target;
+      if (piece.classList.contains(turn)) {
+        if (selectedPiece === piece) {
+          deselectPiece();
+        } else {
+          if (selectedPiece) deselectPiece();
+          selectPiece(piece);
+        }
+      }
+    }
+
+    function handleSquareClick(event) {
+      if (selectedPiece) {
+        const targetSquare = event.target;
+        const targetRow = parseInt(targetSquare.dataset.row);
+        const targetCol = parseInt(targetSquare.dataset.col);
+        const move = possibleMoves.find(m => m.row === targetRow && m.col === targetCol);
+        if (move) {
+          movePiece(selectedPiece, move);
+          deselectPiece();
+        }
+      }
+    }
+
+    function selectPiece(piece) {
+      selectedPiece = piece;
+      piece.style.boxShadow = '0 0 10px 5px yellow';
+      possibleMoves = getPossibleMoves(piece);
+      highlightMoves();
+    }
+
+    function deselectPiece() {
+      if (selectedPiece) {
+        selectedPiece.style.boxShadow = 'none';
+        selectedPiece = null;
+        possibleMoves = [];
+        removeHighlights();
+      }
+    }
+
+    function getPossibleMoves(piece) {
+      const row = parseInt(piece.dataset.row);
+      const col = parseInt(piece.dataset.col);
+      const color = piece.classList.contains('white') ? 'white' : 'black';
+      const isKing = piece.classList.contains('king');
+      const moves = [];
+
+      const directions = isKing ? [-1, 1] : (color === 'white' ? [-1] : [1]);
+
+      for (const rowDir of directions) {
+        for (const colDir of [-1, 1]) {
+          let newRow = row + rowDir;
+          let newCol = col + colDir;
+          if (isValidPosition(newRow, newCol)) {
+            const targetSquare = document.querySelector(`.square[data-row="${newRow}"][data-col="${newCol}"]`);
+            if (!targetSquare.hasChildNodes()) {
+              moves.push({ row: newRow, col: newCol, isCapture: false });
+            } else {
+              const targetPiece = targetSquare.firstChild;
+              if (targetPiece.classList.contains(color === 'white' ? 'black' : 'white')) {
+                newRow += rowDir;
+                newCol += colDir;
+                if (isValidPosition(newRow, newCol)) {
+                  const behindSquare = document.querySelector(`.square[data-row="${newRow}"][data-col="${newCol}"]`);
+                  if (!behindSquare.hasChildNodes()) {
+                    moves.push({ row: newRow, col: newCol, isCapture: true, capturedPiece: targetPiece });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return moves;
+    }
+
+    function isValidPosition(row, col) {
+      return row >= 0 && row < 8 && col >= 0 && col < 8;
+    }
+
+    function highlightMoves() {
+      for (const move of possibleMoves) {
+        const square = document.querySelector(`.square[data-row="${move.row}"][data-col="${move.col}"]`);
+        square.classList.add('possible-move');
+      }
+    }
+
+    function removeHighlights() {
+      const highlightedSquares = document.querySelectorAll('.possible-move');
+      highlightedSquares.forEach(square => square.classList.remove('possible-move'));
+    }
+
+    function movePiece(piece, move) {
+      const oldRow = parseInt(piece.dataset.row);
+      const oldCol = parseInt(piece.dataset.col);
+      const newRow = move.row;
+      const newCol = move.col;
+
+      // Update piece position
+      piece.dataset.row = newRow;
+      piece.dataset.col = newCol;
+
+      // Move piece to new square
+      const oldSquare = document.querySelector(`.square[data-row="${oldRow}"][data-col="${oldCol}"]`);
+      const newSquare = document.querySelector(`.square[data-row="${newRow}"][data-col="${newCol}"]`);
+      oldSquare.removeChild(piece);
+      newSquare.appendChild(piece);
+
+      // Handle capture
+      if (move.isCapture) {
+        const capturedPiece = move.capturedPiece;
+        const capturedSquare = capturedPiece.parentNode;
+        capturedSquare.removeChild(capturedPiece);
+        capturedPieces[turn === 'white' ? 'black' : 'white']++;
+      }
+
+      // Check for king promotion
+      if ((turn === 'white' && newRow === 0) || (turn === 'black' && newRow === 7)) {
+        piece.classList.add('king');
+        kings[turn]++;
+      }
+
+      // Switch turn
+      turn = turn === 'white' ? 'black' : 'white';
+
+      updateGameInfo();
+      checkGameOver();
+    }
+
+    function updateGameInfo() {
+      document.getElementById('turn').textContent = turn;
+      document.getElementById('captured').textContent = `Blancas: ${capturedPieces.black}, Negras: ${capturedPieces.white}`;
+      document.getElementById('kings').textContent = `Blancas: ${kings.white}, Negras: ${kings.black}`;
+      document.getElementById('blows').textContent = `Blancas: ${blowedPieces.white}, Negras: ${blowedPieces.black}`;
+    }
+
+    function checkGameOver() {
+      const pieces = document.querySelectorAll(`.piece.${turn}`);
+      let hasValidMoves = false;
+      for (const piece of pieces) {
+        if (getPossibleMoves(piece).length > 0) {
+          hasValidMoves = true;
+          break;
+        }
+      }
+      if (!hasValidMoves) {
+        alert(`¡Juego terminado! Ganan las ${turn === 'white' ? 'Negras' : 'Blancas'}`);
+      }
+    }
+
+    createBoard();
+    placePieces();
+    updateGameInfo();
+  </script>
+</body>
+</html>
